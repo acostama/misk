@@ -27,6 +27,7 @@ ext.dep = [
     "jacksonKotlin": "com.fasterxml.jackson.module:jackson-module-kotlin:2.9.3",
     "javaxInject": "javax.inject:javax.inject:1",
     "jaxbApi": "javax.xml.bind:jaxb-api:2.3.0",
+    "jetcdCore": "com.coreos:jetcd-core:0.0.2",
     "jettyAlpnConscypt": "org.eclipse.jetty:jetty-alpn-conscrypt-server:9.4.11.v20180605",
     "jettyHttp2": "org.eclipse.jetty.http2:http2-server:9.4.11.v20180605",
     "jettyServer": "org.eclipse.jetty:jetty-server:9.4.11.v20180605",
@@ -74,3 +75,4 @@ ext.dep = [
     "zipkinBrave": "io.zipkin.brave:brave:4.17.2",
     "zipkinReporter": "io.zipkin.reporter2:zipkin-sender-okhttp3:2.4.1"
 ]//Generated from polyrepo's master-dependencies.json
+
