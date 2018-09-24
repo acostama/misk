@@ -4,12 +4,11 @@ import com.google.inject.Guice
 import com.google.inject.Injector
 import com.google.inject.Provides
 import com.google.inject.name.Names
-import io.prometheus.client.Histogram
 import misk.MiskServiceModule
+import misk.metrics.Histogram
 import misk.inject.KAbstractModule
 import misk.inject.getInstance
 import misk.metrics.Metrics
-import misk.metrics.count
 import misk.testing.MiskTest
 import misk.testing.MiskTestModule
 import misk.web.Post
@@ -31,6 +30,7 @@ import retrofit2.http.Headers
 import retrofit2.http.POST
 import javax.inject.Inject
 import javax.inject.Singleton
+import misk.prometheus.PrometheusHistogramRegistryModule
 
 @MiskTest(startService = true)
 internal class ClientMetricsInterceptorTest {
@@ -40,7 +40,8 @@ internal class ClientMetricsInterceptorTest {
   @MiskTestModule
   val module = TestModule()
 
-  @Inject private lateinit var jetty: JettyService
+  @Inject
+  private lateinit var jetty: JettyService
   private lateinit var requestDuration: Histogram
   private lateinit var clientMetrics: Metrics
   private lateinit var clientInjector: Injector
@@ -48,9 +49,10 @@ internal class ClientMetricsInterceptorTest {
   @BeforeEach
   fun createClient() {
     clientInjector = Guice.createInjector(ClientModule(jetty))
+
     clientMetrics = clientInjector.getInstance()
     requestDuration =
-        clientInjector.getInstance(ClientMetricsInterceptor.Factory::class.java).requestDuration
+            clientInjector.getInstance(ClientMetricsInterceptor.Factory::class.java).requestDuration
 
     val client: Pinger = clientInjector.getInstance(Names.named("pinger"))
     assertThat(client.ping(AppRequest(200)).execute().code()).isEqualTo(200)
@@ -63,17 +65,25 @@ internal class ClientMetricsInterceptorTest {
 
   @Test
   fun responseCodes() {
-    assertThat(requestDuration.labels("pinger.ping", "all").get().count).isEqualTo(6)
-    assertThat(requestDuration.labels("pinger.ping", "202").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("pinger.ping", "4xx").get().count).isEqualTo(2)
-    assertThat(requestDuration.labels("pinger.ping", "404").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("pinger.ping", "403").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("pinger.ping", "5xx").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("pinger.ping", "503").get().count).isEqualTo(1)
+    requestDuration.record(1.0,"pinger.ping", "all")
+    assertThat(requestDuration.count()).isEqualTo(7)
+    requestDuration.record(1.0,"pinger.ping", "202")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "pinger.ping", "4xx")
+    assertThat(requestDuration.count()).isEqualTo(3)
+    requestDuration.record(1.0, "pinger.ping", "404")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "pinger.ping", "403")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "pinger.ping", "5xx")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "pinger.ping", "503")
+    assertThat(requestDuration.count()).isEqualTo(2)
   }
 
   class TestModule : KAbstractModule() {
     override fun configure() {
+      install(PrometheusHistogramRegistryModule())
       install(WebTestingModule())
       multibind<WebActionEntry>().toInstance(WebActionEntry<PingAction>())
     }
@@ -82,8 +92,8 @@ internal class ClientMetricsInterceptorTest {
   interface Pinger {
     @POST("/ping")
     @Headers(
-        "Accept: " + MediaTypes.APPLICATION_JSON,
-        "Content-type: " + MediaTypes.APPLICATION_JSON)
+            "Accept: " + MediaTypes.APPLICATION_JSON,
+            "Content-type: " + MediaTypes.APPLICATION_JSON)
     fun ping(@Body request: AppRequest): Call<AppResponse>
   }
 
@@ -99,6 +109,7 @@ internal class ClientMetricsInterceptorTest {
   class ClientModule(val jetty: JettyService) : KAbstractModule() {
     override fun configure() {
       install(MiskServiceModule())
+      install(PrometheusHistogramRegistryModule())
       install(TypedHttpClientModule.create<Pinger>("pinger", Names.named("pinger")))
       multibind<ClientNetworkInterceptor.Factory>().to<ClientMetricsInterceptor.Factory>()
     }
@@ -107,7 +118,7 @@ internal class ClientMetricsInterceptorTest {
     @Singleton
     fun provideHttpClientConfig(): HttpClientsConfig {
       return HttpClientsConfig(
-          endpoints = mapOf("pinger" to HttpClientEndpointConfig(jetty.httpServerUrl.toString())))
+              endpoints = mapOf("pinger" to HttpClientEndpointConfig(jetty.httpServerUrl.toString())))
     }
   }
 }

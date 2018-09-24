@@ -7,6 +7,7 @@ import com.google.inject.Module
 import misk.inject.KAbstractModule
 import misk.inject.getInstance
 import misk.inject.uninject
+import misk.prometheus.PrometheusHistogramRegistryModule
 import org.junit.jupiter.api.extension.AfterEachCallback
 import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.ExtensionContext
@@ -24,6 +25,7 @@ internal class MiskTestExtension : BeforeEachCallback, AfterEachCallback {
         }
         for (module in context.getActionTestModules()) {
           install(module)
+          install(PrometheusHistogramRegistryModule())
         }
         multibind<BeforeEachCallback>().to<InjectUninject>()
         multibind<AfterEachCallback>().to<InjectUninject>()

@@ -7,6 +7,7 @@ import misk.healthchecks.HealthCheck
 import misk.inject.KAbstractModule
 import misk.metrics.MetricsModule
 import misk.moshi.MoshiModule
+import misk.prometheus.PrometheusHistogramRegistryModule
 import misk.resources.ResourceLoaderModule
 import misk.time.ClockModule
 import misk.tokens.TokenGeneratorModule
@@ -21,6 +22,7 @@ class MiskServiceModule : KAbstractModule() {
     install(MoshiModule())
     install(ResourceLoaderModule())
     install(TokenGeneratorModule())
+    install(PrometheusHistogramRegistryModule())
 
     // Initialize empty sets for our multibindings.
     newMultibinder<HealthCheck>()

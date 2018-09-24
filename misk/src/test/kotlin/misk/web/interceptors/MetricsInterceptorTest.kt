@@ -1,5 +1,6 @@
 package misk.web.interceptors
 
+import misk.prometheus.PrometheusHistogramRegistryModule
 import misk.inject.KAbstractModule
 import misk.metrics.count
 import misk.security.authz.AccessControlModule
@@ -47,17 +48,27 @@ class MetricsInterceptorTest {
   @Test
   fun responseCodes() {
     val requestDuration = metricsInterceptorFactory.requestDuration
-    assertThat(requestDuration.labels("TestAction", "unknown", "all").get().count).isEqualTo(6)
-    assertThat(requestDuration.labels("TestAction", "unknown", "2xx").get().count).isEqualTo(3)
-    assertThat(requestDuration.labels("TestAction", "unknown", "200").get().count).isEqualTo(2)
-    assertThat(requestDuration.labels("TestAction", "unknown", "202").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("TestAction", "unknown", "4xx").get().count).isEqualTo(3)
-    assertThat(requestDuration.labels("TestAction", "unknown", "404").get().count).isEqualTo(1)
-    assertThat(requestDuration.labels("TestAction", "unknown", "403").get().count).isEqualTo(2)
+    requestDuration.record(1.0,"TestAction", "unknown", "all")
+    assertThat(requestDuration.count()).isEqualTo(7)
+    requestDuration.record(1.0, "TestAction", "unknown", "2xx")
+    assertThat(requestDuration.count()).isEqualTo(4)
+    requestDuration.record(1.0, "TestAction", "unknown", "200")
+    assertThat(requestDuration.count()).isEqualTo(3)
+    requestDuration.record(1.0, "TestAction", "unknown", "202")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "TestAction", "unknown", "4xx")
+    assertThat(requestDuration.count()).isEqualTo(4)
+    requestDuration.record(1.0, "TestAction", "unknown", "404")
+    assertThat(requestDuration.count()).isEqualTo(2)
+    requestDuration.record(1.0, "TestAction", "unknown", "403")
+    assertThat(requestDuration.count()).isEqualTo(3)
 
-    assertThat(requestDuration.labels("TestAction", "my-peer", "all").get().count).isEqualTo(4)
-    assertThat(requestDuration.labels("TestAction", "my-peer", "2xx").get().count).isEqualTo(4)
-    assertThat(requestDuration.labels("TestAction", "my-peer", "200").get().count).isEqualTo(4)
+    requestDuration.record(1.0, "TestAction", "my-peer", "all")
+    assertThat(requestDuration.count()).isEqualTo(5)
+    requestDuration.record(1.0, "TestAction", "my-peer", "2xx")
+    assertThat(requestDuration.count()).isEqualTo(5)
+    requestDuration.record(1.0,"TestAction", "my-peer", "200")
+    assertThat(requestDuration.count()).isEqualTo(5)
   }
 
   fun invoke(desiredStatusCode: Int, service: String? = null): okhttp3.Response {
@@ -85,6 +96,7 @@ class MetricsInterceptorTest {
       install(AccessControlModule())
       install(WebTestingModule())
       install(FakeCallerAuthenticatorModule())
+      install(PrometheusHistogramRegistryModule())
       multibind<WebActionEntry>().toInstance(WebActionEntry<TestAction>())
     }
   }
