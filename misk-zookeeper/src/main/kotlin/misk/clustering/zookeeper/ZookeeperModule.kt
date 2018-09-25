@@ -14,21 +14,7 @@ class ZookeeperModule : KAbstractModule() {
   override fun configure() {
     multibind<Service>().to<ZkService>()
     multibind<Service>().to<ZkLeaseManager>()
-  }
-
-  @Provides @Singleton
-  fun provideCuratorFramework(config: ZookeeperConfig): CuratorFramework {
-    // Uses reasonable default values from http://curator.apache.org/getting-started.html
-    val retryPolicy = ExponentialBackoffRetry(1000, 3)
-    return CuratorFrameworkFactory.builder()
-        .connectString(config.zk_connect)
-        .retryPolicy(retryPolicy)
-        .sessionTimeoutMs(config.session_timeout_msecs)
-        .canBeReadOnly(false)
-        .threadFactory(ThreadFactoryBuilder()
-            .setNameFormat("zk-clustering-${config.zk_connect}")
-            .build())
-        .build()
+    bind<CuratorFramework>().toProvider(CuratorFrameworkProvider::class.java)
   }
 
   companion object {

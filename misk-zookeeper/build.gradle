@@ -27,7 +27,7 @@ junitPlatform {
 }
 
 dependencies {
-  compile dep.zkCurator
+  compile dep.curatorFramework
   compile dep.zookeeper
   compile dep.okio
   compile project(':misk')
@@ -36,6 +36,7 @@ dependencies {
   testCompile dep.junitApi
   testCompile dep.junitEngine
   testCompile dep.junitParams
+  testCompile dep.docker
   testCompile project(':misk-testing')
 }
 

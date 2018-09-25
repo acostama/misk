@@ -2,12 +2,10 @@ package misk.clustering.zookeeper
 
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.imps.CuratorFrameworkState
-import org.apache.curator.utils.PathUtils
 
 /** @return a version of the path suitable for as a namespace (see [CuratorFramework.usingNamespace] */
 val String.asZkNamespacePath: String
-  get() =
-    PathUtils.validatePath(if (startsWith("/")) substring(1) else this)
+  get() = if (startsWith("/")) substring(1) else this
 
 /** @return true if the client is running */
 val CuratorFramework.isRunning: Boolean get() = state == CuratorFrameworkState.STARTED;

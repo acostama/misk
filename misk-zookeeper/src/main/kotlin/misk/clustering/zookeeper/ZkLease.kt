@@ -5,7 +5,9 @@ import misk.logging.getLogger
 import org.apache.zookeeper.CreateMode
 import org.apache.zookeeper.KeeperException
 import org.apache.zookeeper.ZooDefs
+import java.util.concurrent.locks.ReentrantLock
 import javax.annotation.concurrent.GuardedBy
+import kotlin.concurrent.withLock
 
 /**
  * Zookeeper based load balanced lease.
@@ -41,49 +43,33 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
     HELD
   }
 
-  @GuardedBy("this") private var status: Status = Status.UNKNOWN
+  @GuardedBy("lock") private var status: Status = Status.UNKNOWN
+  private val lock = ReentrantLock()
   private val leaseData = name.toByteArray(Charsets.UTF_8)
 
   override fun checkHeld(): Boolean {
     try {
-      // TODO(mmihic): Allow explicit disabling of individual leases and individual lease ownership
-      // pinned to a specific server
+      // TODO(mmihic): Support explicitly disabling this cluster member from acquiring leases
       if (!manager.isRunning || !manager.isConnected) {
         return false
       }
 
-      // Check whether we should own the lease
-      val clusterSnapshot = manager.cluster.snapshot
-      val leaseOwner = clusterSnapshot.hashRing.mapResourceToMember(name)
-      if (leaseOwner.name != clusterSnapshot.self.name) {
-        // We should no longer hold the lease, so release it if we do
-        releaseIfHeld(true)
-        return false
-      }
+      return if (shouldHoldLease()) {
+        lock.withLock {
+          when (status) {
+            // We already own the lease
+            Status.HELD -> true
 
-      // We should own the lease. Check if we do, and if not then attempt to acquire it
-      synchronized(this) {
-        if (status == Status.HELD) {
-          // We already own the lease
-          return true
-        }
-
-        // See if we still have the lease according to zookeeper - we may have forgotten this
-        // as a result of a spurious disconnect / reconnect to zookeeper
-        if (checkLeaseNodeExists()) {
-          if (checkLeaseDataMatches()) {
-            log.info { "reclaiming currently held lease $name" }
-            status = Status.HELD
-            return true
+            // We don't own the lease but should - try to acquire it
+            Status.UNKNOWN, Status.NOT_HELD -> tryAcquireLeaseNode()
           }
-
-          leaseHeldByAnother()
-          return false
         }
-
-        // The lease node doesn't exist, so try to acquire it
-        return tryAcquireLeaseNode()
+      } else {
+        // We shouldn't own the lease
+        releaseIfHeld(true)
+        false
       }
+
     } catch (e: Exception) {
       log.error(e) { "unexpected exception checking if lease $name is held" }
       return false
@@ -94,7 +80,7 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
   }
 
   fun connectionLost() {
-    synchronized(this) {
+    lock.withLock {
       // We're disconnected from the cluster, so we don't know the state of the lease. Zk will
       // automatically expire the lease if we remain disconnected for too long, and in the
       // meanwhile we should act as though the lease has been lost
@@ -103,7 +89,7 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
   }
 
   fun releaseIfHeld(guaranteeDelete: Boolean = true) {
-    synchronized(this) {
+    lock.withLock {
       if (status == Status.NOT_HELD) {
         // We're not holding the lease, nothing to be done
         return
@@ -111,11 +97,11 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
 
       try {
         if (checkLeaseNodeExists() && checkLeaseDataMatches()) {
-          // Lease exists and we own it, so delete it
+          // Lease exists in zk and we own it, so delete it
           if (guaranteeDelete) {
-            manager.client.delete().guaranteed().forPath(name)
+            manager.client.value.delete().guaranteed().forPath(name)
           } else {
-            manager.client.delete().forPath(name)
+            manager.client.value.delete().forPath(name)
           }
 
           log.info { "released lease $name" }
@@ -133,8 +119,23 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
   }
 
   private fun tryAcquireLeaseNode(): Boolean {
+    // See if we still have the lease according to zookeeper - we may have forgotten this
+    // as a result of a temporary disconnect / reconnect to zookeeper
+    if (checkLeaseNodeExists()) {
+      if (checkLeaseDataMatches()) {
+        log.info { "reclaiming currently held lease $name" }
+        status = Status.HELD
+        return true
+      }
+
+      leaseHeldByAnother()
+      return false
+    }
+
+    // The zookeeper node representing the lease does not exist, so try to create it to acquire
+    // the lease
     try {
-      manager.client.create()
+      manager.client.value.create()
           .withMode(CreateMode.EPHEMERAL)
           .withACL(ZooDefs.Ids.OPEN_ACL_UNSAFE)
           .forPath(name, leaseData)
@@ -150,15 +151,28 @@ internal class ZkLease(private val manager: ZkLeaseManager, override val name: S
     return false
   }
 
-  private fun checkLeaseNodeExists() = manager.client.checkExists().forPath(name) != null
+  /** @return true if we should hold the lease per the cluster membership */
+  private fun shouldHoldLease(): Boolean {
+    val clusterSnapshot = manager.cluster.snapshot
+    val desiredLeaseOwner = clusterSnapshot.resourceMapper[name]
+    return desiredLeaseOwner.name == clusterSnapshot.self.name
+  }
+
+  /** @return true if the lease node exists in zk */
+  private fun checkLeaseNodeExists() = manager.client.value.checkExists().forPath(name) != null
+
+  /** @return true if the lease data held in the zk node matches our lease data */
   private fun checkLeaseDataMatches() = leaseData.contentEquals(currentLeaseData() ?: byteArrayOf())
+
+  /** @return the current lease data from the zk node */
   private fun currentLeaseData() = try {
-    manager.client.data.forPath(name)
+    manager.client.value.data.forPath(name)
   } catch (e: KeeperException.NoNodeException) {
     // The lease node no longer exists
     null
   }
 
+  /** Called when we detect that the lease is being actively held by another instance */
   private fun leaseHeldByAnother() {
     synchronized(this) {
       if (status != Status.NOT_HELD) {

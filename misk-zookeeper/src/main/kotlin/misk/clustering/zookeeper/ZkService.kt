@@ -6,7 +6,9 @@ import misk.DependentService
 import misk.logging.getLogger
 import org.apache.curator.framework.CuratorFramework
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 internal class ZkService @Inject internal constructor(
   private val curatorFramework: CuratorFramework
 ) : AbstractIdleService(), DependentService {

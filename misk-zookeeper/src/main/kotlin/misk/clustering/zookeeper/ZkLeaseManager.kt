@@ -14,20 +14,22 @@ import org.apache.curator.framework.state.ConnectionStateListener
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 import javax.annotation.concurrent.GuardedBy
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.concurrent.withLock
 
 @Singleton
 internal class ZkLeaseManager @Inject internal constructor(
   @AppName private val appName: String,
   internal val cluster: Cluster,
-  curator: CuratorFramework
+  private val curator: CuratorFramework
 ) : AbstractIdleService(), LeaseManager, DependentService, ConnectionStateListener {
   override val consumedKeys = setOf(ZookeeperModule.serviceKey)
   override val producedKeys = setOf(ZookeeperModule.leaseManagerKey)
 
-  internal val client = curator.usingNamespace(appName.asZkNamespacePath)
+  internal val client = lazy { curator.usingNamespace(appName.asZkNamespacePath) }
   private val executor = Executors.newCachedThreadPool(ThreadFactoryBuilder()
       .setNameFormat("lease-monitor-%d")
       .build())
@@ -38,27 +40,28 @@ internal class ZkLeaseManager @Inject internal constructor(
     STOPPED
   }
 
-  @GuardedBy("this") private var connected = false
-  @GuardedBy("this") private var state = State.NOT_STARTED
-  @GuardedBy("this") private val leases = mutableMapOf<String, ZkLease>()
+  private val lock = ReentrantLock()
+  @GuardedBy("lock") private var connected = false
+  @GuardedBy("lock") private var state = State.NOT_STARTED
+  @GuardedBy("lock") private val leases = mutableMapOf<String, ZkLease>()
 
-  internal val isConnected get() = synchronized(this) { connected }
-  internal val isRunning get() = synchronized(this) { state == State.RUNNING } && client.isRunning
+  internal val isConnected get() = lock.withLock { connected }
+  internal val isRunning get() = lock.withLock { state == State.RUNNING } && client.value.isRunning
 
   override fun startUp() {
     log.info { "starting zk lease manager" }
-    synchronized(this) {
+    lock.withLock {
       check(state == State.NOT_STARTED) { "attempting to start lease manager in $state state" }
 
       state = State.RUNNING
-      client.connectionStateListenable.addListener(this)
+      client.value.connectionStateListenable.addListener(this)
       cluster.watch { handleClusterChange() }
     }
   }
 
   override fun shutDown() {
     log.info { "stopping zk lease manager" }
-    synchronized(this) {
+    lock.withLock {
       check(state == State.RUNNING) { "attempting to stop lease manager in $state state" }
       state = State.STOPPED
 
@@ -72,7 +75,7 @@ internal class ZkLeaseManager @Inject internal constructor(
   }
 
   override fun tryAcquireLease(name: String, ttl: Duration): Lease {
-    return synchronized(this) {
+    return lock.withLock {
       check(state != State.STOPPED) { "attempting to acquire lease from $state lease manager" }
       leases.computeIfAbsent(name) { ZkLease(this, name) }
     }
@@ -80,7 +83,7 @@ internal class ZkLeaseManager @Inject internal constructor(
 
   private fun handleClusterChange() {
     // Reconfirm whether we should own each lease now that the cluster topology has changed
-    val leasesToCheck = synchronized(this) { leases.values }
+    val leasesToCheck = lock.withLock { leases.values }
     leasesToCheck.forEach { lease ->
       executor.submit {
         lease.checkHeld()
@@ -89,7 +92,7 @@ internal class ZkLeaseManager @Inject internal constructor(
   }
 
   override fun stateChanged(client: CuratorFramework, newState: ConnectionState) {
-    synchronized(this) {
+    lock.withLock {
       connected = newState.isConnected
       if (!connected) {
         // Mark each lease as being in an UNKNOWN state
