@@ -2,7 +2,6 @@ package misk.web.interceptors
 
 import misk.prometheus.PrometheusHistogramRegistryModule
 import misk.inject.KAbstractModule
-import misk.metrics.count
 import misk.security.authz.AccessControlModule
 import misk.security.authz.Unauthenticated
 import misk.security.authz.fake.FakeCallerAuthenticator.Companion.SERVICE_HEADER
