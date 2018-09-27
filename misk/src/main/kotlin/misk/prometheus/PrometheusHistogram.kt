@@ -1,7 +1,6 @@
 package misk.prometheus
 
 import misk.metrics.Histogram
-import misk.metrics.count
 
 class PrometheusHistogram: Histogram {
     lateinit var histogram: io.prometheus.client.Histogram
@@ -10,7 +9,7 @@ class PrometheusHistogram: Histogram {
     override fun record(duration: Double, vararg labelValues: String) {
         var child: io.prometheus.client.Histogram.Child = histogram.labels(*labelValues)
         child.observe(duration)
-        bucketCount = child.get().count
+        bucketCount = child.get().buckets.max()?.toInt() ?: 0
     }
 
     override fun count(): Int {

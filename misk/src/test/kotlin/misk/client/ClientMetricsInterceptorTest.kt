@@ -40,8 +40,7 @@ internal class ClientMetricsInterceptorTest {
   @MiskTestModule
   val module = TestModule()
 
-  @Inject
-  private lateinit var jetty: JettyService
+  @Inject private lateinit var jetty: JettyService
   private lateinit var requestDuration: Histogram
   private lateinit var clientMetrics: Metrics
   private lateinit var clientInjector: Injector

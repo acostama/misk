@@ -55,5 +55,3 @@ class Metrics @Inject internal constructor(val registry: CollectorRegistry) {
     fun sanitize(name: String) = name.replace("[\\-\\.\t]", "_")
   }
 }
-
-internal val io.prometheus.client.Histogram.Child.Value.count get() = buckets.max()?.toInt() ?: 0

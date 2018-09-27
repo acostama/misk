@@ -1,5 +1,11 @@
 package misk.metrics
 
+/*
+ * Skeleton to create a new histogram
+ *
+ * Implementation should register the histogram upon creation
+ */
+
 interface HistogramRegistry {
 
      fun newHistogram(
